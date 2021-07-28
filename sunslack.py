@@ -2,11 +2,12 @@
 #
 import os
 
+import logging
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
+import pickle
 import requests
-import logging
 
 from datetime import datetime
 from slack_sdk import WebClient
@@ -14,16 +15,29 @@ from slack_sdk.errors import SlackApiError
 
 FLUX_URL = "https://services.swpc.noaa.gov/products/summary/10cm-flux.json"
 FORECAST_URL = "https://services.swpc.noaa.gov/text/27-day-outlook.txt"
+CACHE_DIR = "/tmp/foobar"
+
+CHANNEL_ID = 'C01TVLS0RDJ'
 
 logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
                     datefmt='%c',
                     level=logging.INFO)
 
-class Predictions:
-    date = None
-    fields = []
 
-class SunRecord(object):
+class Predictions:
+  date = None
+  fields = []
+
+  def __cmp__(self, other):
+    return (self.date > other.date) - (self.date < other.date)
+
+  def __eq__(self, other):
+    if other is None:
+      return False
+    return self.date == other.date
+
+
+class SunRecord:
   """Datastructure holding the sum forecast information"""
 
   __slot__ = ["date", "flux", "a_index", "kp_index"]
@@ -42,42 +56,109 @@ class SunRecord(object):
      return "{0.date} {0.flux} {0.a_index} {0.kp_index}".format(self)
 
 
-def download_flux():
-  """Download the current measuref 10.7 cm flux index"""
+class Flux:
+
+  def __init__(self, cache_dir):
+    os.makedirs(cache_dir, exist_ok=True)
+    cachefile = os.path.join(cache_dir, 'flux.pkl')
+    self.data = {}
+
+    cached_data = readcache(cachefile)
+    self.data = self.download_flux()
+
+    if self.data == cached_data:
+      self.newdata = False
+    else:
+      self.newdata = True
+      writecache(cachefile, self.data)
+
+  @staticmethod
+  def download_flux():
+    """Download the current measuref 10.7 cm flux index"""
+    try:
+      req = requests.get(FLUX_URL)
+      data = req.json()
+    except requests.ConnectionError as err:
+      logging.error('Connection error: %s we will try later', err)
+      sys.exit(os.EX_IOERR)
+
+    if req.status_code != 200:
+      return None
+
+    return dict(flux=int(data['Flux']),
+                time=datetime.strptime(data['TimeStamp'], '%Y-%m-%d %H:%M:%S'))
+
+  @property
+  def flux(self):
+    return self.data['flux']
+
+  @property
+  def time(self):
+    return self.data['time']
+
+
+class Forecast:
+
+  def __init__(self, cache_dir):
+    os.makedirs(cache_dir, exist_ok=True)
+    cachefile = os.path.join(cache_dir, 'forecast.pkl')
+    self.data = None
+
+    cached_data = readcache(cachefile)
+    self.data = self.download_forecast()
+
+    if self.data == cached_data:
+      self.newdata = False
+    else:
+      self.newdata = True
+      writecache(cachefile, self.data)
+
+
+  @staticmethod
+  def download_forecast():
+    """Download the forecast data from noaa"""
+    try:
+      req = requests.get(FORECAST_URL)
+    except requests.ConnectionError as err:
+      logging.error('Connection error: %s we will try later', err)
+      sys.exit(os.EX_IOERR)
+
+
+    predictions = Predictions()
+    if req.status_code == 200:
+      for line in req.text.splitlines():
+        line = line.strip()
+        if line.startswith(':Issued:'):
+          predictions.date = datetime.strptime(line, ':Issued: %Y %b %d %H%M %Z')
+          continue
+        if not line or line.startswith(":") or line.startswith("#"):
+          continue
+        predictions.fields.append(SunRecord(line.split()))
+    return predictions
+
+  @property
+  def date(self):
+    return self.data.date
+
+  @property
+  def fields(self):
+    return self.data.fields
+
+
+def readcache(cachefile):
+  """Read data from the cache"""
   try:
-    req = requests.get(FLUX_URL)
-  except requests.ConnectionError as err:
-    logging.error('Connection error: %s we will try later', err)
-    sys.exit(os.EX_IOERR)
-
-  if req.status_code != 200:
-    return None
-
-  data = req.json()
-  return dict(flux=int(data['Flux']),
-              time=datetime.strptime(data['TimeStamp'], '%Y-%m-%d %H:%M:%S'))
+    with open(cachefile, 'rb') as fd_cache:
+      data = pickle.load(fd_cache)
+  except (FileNotFoundError, EOFError):
+    data = None
+  return data
 
 
-def download_forecast():
-  """Download the forecast data from noaa"""
-  try:
-    req = requests.get(FORECAST_URL)
-  except requests.ConnectionError as err:
-    logging.error('Connection error: %s we will try later', err)
-    sys.exit(os.EX_IOERR)
-
-
-  predictions = Predictions()
-  if req.status_code == 200:
-    for line in req.text.splitlines():
-      line = line.strip()
-      if line.startswith(':Issued:'):
-        predictions.date = datetime.strptime(line, ':Issued: %Y %b %d %H%M %Z')
-        continue
-      if not line or line.startswith(":") or line.startswith("#"):
-        continue
-      predictions.fields.append(SunRecord(line.split()))
-  return predictions
+def writecache(cachefile, data):
+  """Write data into the cachefile"""
+  with open(cachefile, 'wb') as fd_cache:
+    pickle.dump(data, fd_cache)
 
 
 def plot(predictions, filename):
@@ -115,40 +196,42 @@ def plot(predictions, filename):
 
 def main():
   """Everyone needs a main purpose"""
-  forecast = download_forecast()
-  current_flux = download_flux()
-  new_plot = False
-
   try:
     with open(os.path.expanduser('~/.slack-token')) as fd_token:
       token = fd_token.readline().strip()
-    client = WebClient(token=token)
   except FileNotFoundError as err:
     logging.error(err)
     sys.exit(os.EX_OSFILE)
 
-  plot_file = 'flux-{}.png'.format(forecast.date.strftime('%Y%m%d-%H%M'))
-  if not os.path.exists(plot_file):
+  logging.info("Gathering data")
+  forecast = Forecast(CACHE_DIR)
+  flux = Flux(CACHE_DIR)
+  client = WebClient(token=token)
+
+  if flux.newdata:
+    try:
+      message = "10.7cm flux index {:d} on {} UTC".format(
+        flux.flux, flux.time.strftime("%b %d %H:%M")
+      )
+      response = client.chat_postMessage(channel=CHANNEL_ID, text=message)
+      logging.info("10cm flux %d on %s", flux.flux, flux.time.strftime("%b %d %H:%M"))
+    except SlackApiError as err:
+      logging.error("postMessage error: %s", err.response['error'])
+  else:
+    logging.info('No new message to post')
+
+  if forecast.newdata:
+    plot_file = 'flux_{}.png'.format(forecast.date.strftime('%Y%m%d%H%M'))
     plot(forecast, plot_file)
     logging.info('A new plot file %s generated', plot_file)
-    new_plot = True
-
-  if current_flux:
     try:
-      message = "Current 10.7cm flux index {:d} at {}".format(
-        current_flux['flux'], current_flux['time'].strftime("%H:%M")
-      )
-      response = client.chat_postMessage(channel="#sunflux", text=message)
-      logging.info("Current 10cm flux %d at %s", current_flux['flux'], current_flux['time'])
-    except SlackApiError as e:
-      logging.error("postMessage error: %s", e.response['error'])
-
-  if new_plot:
-    try:
-      response = client.files_upload(channel='#sunflux', file=plot_file)
+      title = 'Previsions for: {}'.format(forecast.date.strftime("%b %d %H:%M"))
+      response = client.files_upload(file=plot_file, channels=CHANNEL_ID, initial_comment=title)
       logging.info("Sending plot file: %s", plot_file)
-    except SlackApiError as e:
-      logging.error("file_upload error: %s", e.response['error'])
+    except SlackApiError as err:
+      logging.error("file_upload error: %s", err.response['error'])
+  else:
+    logging.info('No new graph to post')
 
 
 if __name__ == "__main__":
