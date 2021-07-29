@@ -10,12 +10,13 @@ only if a new data is available.
 
 __version__ = "1.0.1"
 
-import os
-
+import argparse
 import logging
+import os
 import pickle
 import sys
 
+from configparser import ConfigParser
 from datetime import datetime
 
 import matplotlib.dates as mdates
@@ -27,15 +28,53 @@ from slack_sdk.errors import SlackApiError
 
 FLUX_URL = "https://services.swpc.noaa.gov/products/summary/10cm-flux.json"
 FORECAST_URL = "https://services.swpc.noaa.gov/text/27-day-outlook.txt"
-CACHE_DIR = "/tmp/sunslack"
-
-#CHANNEL_ID = 'C01TVLS0RDJ'
-CHANNEL_ID = 'sunflux'
+CACHE_DIR = "/tmp/sunslack-data"
 
 logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
                     datefmt='%c',
                     level=logging.INFO)
 
+
+class Config:
+  """Sunslack configuration example:
+  [SUNSLACK]
+  token: xoxb-123456789-123456789
+  channel: sunflux
+  cachedir: /tmp/sunflux-data
+  """
+
+  def __init__(self, config_file):
+    parser = ConfigParser()
+
+    self._token = None
+    self._channel = None
+    self._cachedir = CACHE_DIR
+
+    if not os.path.exists(config_file):
+      logging.error('Configuration file "%s" not found', config_file)
+      sys.exit(os.EX_CONFIG)
+
+    with open(config_file, 'r') as fdc:
+      parser.read_file(fdc)
+
+    self._token = parser.get('SUNSLACK', 'token')
+    self._channel = parser.get('SUNSLACK', 'channel')
+    self._cachedir = parser.get('SUNSLACK', 'cachedir', fallback=CACHE_DIR)
+
+  def __repr__(self):
+    return "<Config> channel: {0._channel}, cachedir: {0._cachedir}, token: ***".format(self)
+
+  @property
+  def cachedir(self):
+    return self._cachedir
+
+  @property
+  def channel(self):
+    return self._channel
+
+  @property
+  def token(self):
+    return self._token
 
 class Predictions:
   """Data structure storing all the sun indices predictions"""
@@ -223,24 +262,23 @@ def plot(predictions, filename):
 
 def main():
   """Everyone needs a main purpose"""
-  try:
-    with open(os.path.expanduser('~/.slack-token')) as fd_token:
-      token = fd_token.readline().strip()
-  except FileNotFoundError as err:
-    logging.error(err)
-    sys.exit(os.EX_OSFILE)
+  parser = argparse.ArgumentParser(description="Send NOAA sun predictions to slack")
+  parser.add_argument("--config", type=str, required=True,
+                      help="configuration file path")
+  opts = parser.parse_args()
+  config = Config(os.path.expanduser(opts.config))
 
   logging.info("Gathering data")
-  forecast = Forecast(CACHE_DIR)
-  flux = Flux(CACHE_DIR)
-  client = WebClient(token=token)
+  forecast = Forecast(config.cachedir)
+  flux = Flux(config.cachedir)
+  client = WebClient(token=config.token)
 
   if flux.newdata:
     try:
       message = "10.7cm flux index {:d} on {} UTC".format(
         flux.flux, flux.time.strftime("%b %d %H:%M")
       )
-      client.chat_postMessage(channel=CHANNEL_ID, text=message)
+      client.chat_postMessage(channel=config.channel, text=message)
       logging.info("10cm flux %d on %s", flux.flux, flux.time.strftime("%b %d %H:%M"))
     except SlackApiError as err:
       logging.error("postMessage error: %s", err.response['error'])
@@ -253,7 +291,7 @@ def main():
     logging.info('A new plot file %s generated', plot_file)
     try:
       title = 'Previsions for: {}'.format(forecast.date.strftime("%b %d %H:%M"))
-      client.files_upload(file=plot_file, channels=CHANNEL_ID, initial_comment=title)
+      client.files_upload(file=plot_file, channels=config.channel, initial_comment=title)
       logging.info("Sending plot file: %s", plot_file)
     except SlackApiError as err:
       logging.error("file_upload error: %s", err.response['error'])
