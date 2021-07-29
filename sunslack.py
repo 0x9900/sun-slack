@@ -1,5 +1,15 @@
 #!/usr/bin/env python
 #
+"""This is a slack bot that read the sun activity predictions from
+NOAA, generate a graph and upload the graph on a slack channel.
+
+NOAA updates these data once a days. The a new graph will be generated
+only if a new data is available.
+
+"""
+
+__version__ = "1.0.1"
+
 import os
 
 import logging
@@ -10,7 +20,6 @@ from datetime import datetime
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
-import numpy as np
 import requests
 
 from slack_sdk import WebClient
@@ -18,9 +27,10 @@ from slack_sdk.errors import SlackApiError
 
 FLUX_URL = "https://services.swpc.noaa.gov/products/summary/10cm-flux.json"
 FORECAST_URL = "https://services.swpc.noaa.gov/text/27-day-outlook.txt"
-CACHE_DIR = "/tmp/foobar"
+CACHE_DIR = "/tmp/sunslack"
 
-CHANNEL_ID = 'C01TVLS0RDJ'
+#CHANNEL_ID = 'C01TVLS0RDJ'
+CHANNEL_ID = 'sunflux'
 
 logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
                     datefmt='%c',
@@ -28,6 +38,8 @@ logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
 
 
 class Predictions:
+  """Data structure storing all the sun indices predictions"""
+
   date = None
   fields = []
 
@@ -41,7 +53,8 @@ class Predictions:
 
 
 class SunRecord:
-  """Datastructure holding the sum forecast information"""
+  """Datastructure holding the sun forecast information"""
+  __slots__ = ("date", "data")
 
   def __init__(self, args):
     self.date = datetime.strptime('{} {} {}'.format(*args[0:3]), "%Y %b %d")
@@ -179,9 +192,9 @@ def plot(predictions, filename):
   """Plot forecast"""
   fields = predictions.fields
   dates = [s.date for s in fields]
-  a_index = np.array([s.a_index for s in fields])
-  kp_index = np.array([s.kp_index for s in fields])
-  flux = np.array([s.flux for s in fields])
+  a_index = [s.a_index for s in fields]
+  kp_index = [s.kp_index for s in fields]
+  flux = [s.flux for s in fields]
 
   plt.style.use('ggplot')
   fig, ax1 = plt.subplots(figsize=(12, 7))
@@ -200,7 +213,7 @@ def plot(predictions, filename):
   # second axis
   ax2 = ax1.twinx()
   ax2.plot(dates, flux, "r", label='Flux')
-  ax2.set_ylim([flux.min()-10, flux.max()+3])
+  ax2.set_ylim([min(flux)-10, max(flux)+3])
   ax2.set_ylabel('Flux', fontweight='bold')
   ax2.grid(False)
   fig.legend(loc='upper right', bbox_to_anchor=(0.25, 0.85))
