@@ -287,12 +287,13 @@ def main():
 
   if forecast.newdata:
     plot_file = 'flux_{}.png'.format(forecast.date.strftime('%Y%m%d%H%M'))
-    plot(forecast, plot_file)
+    plot_path = os.path.join(config.cachedir, plot_file)
+    plot(forecast, plot_path)
     logging.info('A new plot file %s generated', plot_file)
     try:
       title = 'Previsions for: {}'.format(forecast.date.strftime("%b %d %H:%M"))
-      client.files_upload(file=plot_file, channels=config.channel, initial_comment=title)
-      logging.info("Sending plot file: %s", plot_file)
+      client.files_upload(file=plot_path, channels=config.channel, initial_comment=title)
+      logging.info("Sending plot file: %s", plot_path)
     except SlackApiError as err:
       logging.error("file_upload error: %s", err.response['error'])
   else:
