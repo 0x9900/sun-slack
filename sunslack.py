@@ -3,13 +3,16 @@
 import os
 
 import logging
+import pickle
+import sys
+
+from datetime import datetime
+
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
-import pickle
 import requests
 
-from datetime import datetime
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
@@ -40,20 +43,31 @@ class Predictions:
 class SunRecord:
   """Datastructure holding the sum forecast information"""
 
-  __slot__ = ["date", "flux", "a_index", "kp_index"]
-
   def __init__(self, args):
-    date = datetime.strptime('{} {} {}'.format(*args[0:3]), "%Y %b %d")
-    setattr(self, 'date', date)
-    setattr(self, 'flux', int(args[3]))
-    setattr(self, 'a_index', int(args[4]))
-    setattr(self, 'kp_index', int(args[5]))
+    self.date = datetime.strptime('{} {} {}'.format(*args[0:3]), "%Y %b %d")
+    self.data = {}
+    self.data['flux'] = int(args[3])
+    self.data['a_index'] = int(args[4])
+    self.data['kp_index'] = int(args[5])
 
   def __repr__(self):
-    return '{} [{}]'.format(self.__class__, ' '.join('%s: %s' % (k, getattr(self, k)) for k in self.__slot__))
+    info = ' '.join('%s: %s' % (k, v) for k, v  in self.data.items())
+    return '{} [{}]'.format(self.__class__, info)
 
   def __str__(self):
-     return "{0.date} {0.flux} {0.a_index} {0.kp_index}".format(self)
+    return "{0.date} {0.flux} {0.a_index} {0.kp_index}".format(self)
+
+  @property
+  def flux(self):
+    return self.data['flux']
+
+  @property
+  def a_index(self):
+    return self.data['a_index']
+
+  @property
+  def kp_index(self):
+    return self.data['kp_index']
 
 
 class Flux:
@@ -170,21 +184,21 @@ def plot(predictions, filename):
   flux = np.array([s.flux for s in fields])
 
   plt.style.use('ggplot')
-  fig, ax = plt.subplots(figsize=(12, 7))
+  fig, ax1 = plt.subplots(figsize=(12, 7))
   fig.suptitle('Solar Activity Predictions for: {} UTC'.format(predictions.date),
                fontsize=16)
   fig.text(.02, .05, 'http://github.com/0x9900/sun-slack', rotation=90)
 
   # first axis
-  ax.plot(dates, a_index, ":b", label='A-index')
-  ax.plot(dates, kp_index, "--m", label='KP-index')
-  ax.set_ylabel('Index', fontweight='bold')
-  ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
-  ax.xaxis.set_tick_params(rotation=45, labelsize=10)
-  ax.grid(True)
+  ax1.plot(dates, a_index, ":b", label='A-index')
+  ax1.plot(dates, kp_index, "--m", label='KP-index')
+  ax1.set_ylabel('Index', fontweight='bold')
+  ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
+  ax1.xaxis.set_tick_params(rotation=45, labelsize=10)
+  ax1.grid(True)
 
   # second axis
-  ax2 = ax.twinx()
+  ax2 = ax1.twinx()
   ax2.plot(dates, flux, "r", label='Flux')
   ax2.set_ylim([flux.min()-10, flux.max()+3])
   ax2.set_ylabel('Flux', fontweight='bold')
@@ -213,7 +227,7 @@ def main():
       message = "10.7cm flux index {:d} on {} UTC".format(
         flux.flux, flux.time.strftime("%b %d %H:%M")
       )
-      response = client.chat_postMessage(channel=CHANNEL_ID, text=message)
+      client.chat_postMessage(channel=CHANNEL_ID, text=message)
       logging.info("10cm flux %d on %s", flux.flux, flux.time.strftime("%b %d %H:%M"))
     except SlackApiError as err:
       logging.error("postMessage error: %s", err.response['error'])
@@ -226,7 +240,7 @@ def main():
     logging.info('A new plot file %s generated', plot_file)
     try:
       title = 'Previsions for: {}'.format(forecast.date.strftime("%b %d %H:%M"))
-      response = client.files_upload(file=plot_file, channels=CHANNEL_ID, initial_comment=title)
+      client.files_upload(file=plot_file, channels=CHANNEL_ID, initial_comment=title)
       logging.info("Sending plot file: %s", plot_file)
     except SlackApiError as err:
       logging.error("file_upload error: %s", err.response['error'])
