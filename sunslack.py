@@ -26,13 +26,13 @@ import requests
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
+ALERTS_URL = "https://services.swpc.noaa.gov/text/wwv.txt"
 FLUX_URL = "https://services.swpc.noaa.gov/products/summary/10cm-flux.json"
 FORECAST_URL = "https://services.swpc.noaa.gov/text/27-day-outlook.txt"
 CACHE_DIR = "/tmp/sunslack-data"
 
 logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
-                    datefmt='%c',
-                    level=logging.INFO)
+                    datefmt='%c', level=logging.INFO)
 
 
 class Config:
@@ -76,11 +76,13 @@ class Config:
   def token(self):
     return self._token
 
-class Predictions:
+
+class NoaaData:
   """Data structure storing all the sun indices predictions"""
 
-  date = None
-  fields = []
+  def __init__(self):
+    self.date = None
+    self.fields = []
 
   def __cmp__(self, other):
     return (self.date > other.date) - (self.date < other.date)
@@ -154,6 +156,9 @@ class Flux:
     return dict(flux=int(data['Flux']),
                 time=datetime.strptime(data['TimeStamp'], '%Y-%m-%d %H:%M:%S'))
 
+  def __repr__(self):
+    return "<{}> at: {}".format(self.__class__.__name__, self.time.isoformat())
+
   @property
   def flux(self):
     return self.data['flux']
@@ -164,6 +169,7 @@ class Flux:
 
 
 class Forecast:
+  """The 27-day Space Weather Outlook Table is issued Mondays by 1500 UTC"""
 
   def __init__(self, cache_dir):
     os.makedirs(cache_dir, exist_ok=True)
@@ -189,8 +195,7 @@ class Forecast:
       logging.error('Connection error: %s we will try later', err)
       sys.exit(os.EX_IOERR)
 
-
-    predictions = Predictions()
+    predictions = NoaaData()
     if req.status_code == 200:
       for line in req.text.splitlines():
         line = line.strip()
@@ -202,13 +207,65 @@ class Forecast:
         predictions.fields.append(SunRecord(line.split()))
     return predictions
 
+  def __repr__(self):
+    return "<{}> at: {}".format(self.__class__.__name__, self.time.isoformat())
+
   @property
-  def date(self):
+  def time(self):
     return self.data.date
 
   @property
   def fields(self):
     return self.data.fields
+
+
+class Alerts:
+
+  def __init__(self, cache_dir):
+    os.makedirs(cache_dir, exist_ok=True)
+    cachefile = os.path.join(cache_dir, 'alerts.pkl')
+    self.data = None
+
+    cached_data = readcache(cachefile)
+    self.data = self.download()
+
+    if self.data == cached_data:
+      self.newdata = False
+    else:
+      self.newdata = True
+      writecache(cachefile, self.data)
+
+  @staticmethod
+  def download():
+    try:
+      req = requests.get(ALERTS_URL)
+    except requests.ConnectionError as err:
+      logging.error('Connection error: %s we will try later', err)
+      sys.exit(os.EX_IOERR)
+
+    alerts = NoaaData()
+    if req.status_code == 200:
+      for line in req.text.splitlines():
+        line = line.strip()
+        if line.startswith(':Issued'):
+          alerts.date = datetime.strptime(line, ':Issued: %Y %b %d %H%M %Z')
+          continue
+        if not line or line.startswith(':') or line.startswith('#'):
+          continue
+        alerts.fields.append(line)
+
+    return alerts
+
+  def __repr__(self):
+    return "<{}> at: {}".format(self.__class__.__name__, self.time.isoformat())
+
+  @property
+  def time(self):
+    return self.data.date
+
+  @property
+  def text(self):
+    return '```' + '\n'.join(self.data.fields) + '```'
 
 
 def readcache(cachefile):
@@ -237,7 +294,7 @@ def plot(predictions, filename):
 
   plt.style.use('ggplot')
   fig, ax1 = plt.subplots(figsize=(12, 7))
-  fig.suptitle('Solar Activity Predictions for: {} UTC'.format(predictions.date),
+  fig.suptitle('Solar Activity Predictions for: {} UTC'.format(predictions.time),
                fontsize=16)
   fig.text(.02, .05, 'http://github.com/0x9900/sun-slack', rotation=90)
 
@@ -269,9 +326,19 @@ def main():
   config = Config(os.path.expanduser(opts.config))
 
   logging.info("Gathering data")
+  alerts = Alerts(config.cachedir)
   forecast = Forecast(config.cachedir)
   flux = Flux(config.cachedir)
   client = WebClient(token=config.token)
+
+  if alerts.newdata:
+    try:
+      client.chat_postMessage(channel=config.channel, text=alerts.text)
+      logging.info("Alerts messages on %s", alerts.time.strftime("%b %d %H:%M"))
+    except SlackApiError as err:
+      logging.error("postMessage error: %s", err.response['error'])
+  else:
+    logging.info('No new message to post')
 
   if flux.newdata:
     try:
@@ -286,12 +353,12 @@ def main():
     logging.info('No new message to post')
 
   if forecast.newdata:
-    plot_file = 'flux_{}.png'.format(forecast.date.strftime('%Y%m%d%H%M'))
+    plot_file = 'flux_{}.png'.format(forecast.time.strftime('%Y%m%d%H%M'))
     plot_path = os.path.join(config.cachedir, plot_file)
     plot(forecast, plot_path)
     logging.info('A new plot file %s generated', plot_file)
     try:
-      title = 'Previsions for: {}'.format(forecast.date.strftime("%b %d %H:%M"))
+      title = 'Previsions for: {}'.format(forecast.time.strftime("%b %d %H:%M"))
       client.files_upload(file=plot_path, channels=config.channel, initial_comment=title)
       logging.info("Sending plot file: %s", plot_path)
     except SlackApiError as err:
