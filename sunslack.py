@@ -342,7 +342,7 @@ def main():
 
   if flux.newdata:
     try:
-      message = "10.7cm flux index {:d} on {} UTC".format(
+      message = "Current 10.7cm flux index {:d} on {} UTC".format(
         flux.flux, flux.time.strftime("%b %d %H:%M")
       )
       client.chat_postMessage(channel=config.channel, text=message)
@@ -353,7 +353,7 @@ def main():
     logging.info('No new message to post')
 
   if forecast.newdata:
-    plot_file = 'flux_{}.png'.format(forecast.time.strftime('%Y%m%d%H%M'))
+    plot_file = 'forecast_{}.png'.format(forecast.time.strftime('%Y%m%d%H%M'))
     plot_path = os.path.join(config.cachedir, plot_file)
     plot(forecast, plot_path)
     logging.info('A new plot file %s generated', plot_file)
