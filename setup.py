@@ -47,8 +47,8 @@ URLS = {
 }
 
 py_version = sys.version_info[:2]
-if py_version < (3, 5):
-  raise RuntimeError('sun-slack requires Python 3.5 or later')
+if py_version < (3, 6):
+  raise RuntimeError('sun-slack requires Python 3.6 or later')
 
 setup(
   name='sunslack',
@@ -62,7 +62,8 @@ setup(
   author=__author__,
   author_email='w6bsd@bsdworld.org',
   py_modules=['sunslack'],
-  install_requires=['matplotlib'],
+  python_requires=">=3.6.0",
+  install_requires=['matplotlib', 'slack_sdk'],
   entry_points = {
     'console_scripts': ['sunslack = sunslack:main'],
   },
