@@ -41,6 +41,11 @@ __author__ = "Fred C. (W6BSD)"
 __version__ = sunslack.__version__
 __license__ = 'BSD'
 
+URLS = {
+  'Source': 'https://github.com/0x9900/sun-slack/',
+  'Tracker': 'https://github.com/0x9900/sun-slack/issues',
+}
+
 py_version = sys.version_info[:2]
 if py_version < (3, 5):
   raise RuntimeError('sun-slack requires Python 3.5 or later')
@@ -51,7 +56,8 @@ setup(
   description='Slack bot publishing NOAA Solar data',
   long_description=__doc__,
   long_description_content_type='text/markdown',
-  url='https://github.com/0x9900/sun-slack/',
+  url='https://0x9900.com/',
+  project_urls = URLS,
   license=__license__,
   author=__author__,
   author_email='w6bsd@bsdworld.org',
