@@ -2,3 +2,4 @@
 token: xoxb-123456789-123456789-123456789
 channel: C029STKAFRS
 cachedir: /tmp/sun-slack-cache
+font: /System/Library/Fonts/Supplemental/Arial.ttf

@@ -23,6 +23,10 @@ Line to add in your crontab:
 1  *  *  *  *  /usr/local/bin/sunslack --config ~/.sunslack.conf >/dev/null
 ```
 
+## Example of graphs published
+
 ![Flux plot](misc/flux.png)
+
+![MUF plot](misc/MUF.gif)
 
 [1]: https://api.slack.com/apps

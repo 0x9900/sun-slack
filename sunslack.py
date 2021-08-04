@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 #
+# pylint: disable=C0116
+
 """This is a slack bot that read the sun activity predictions from
 NOAA, generate a graph and upload the graph on a slack channel.
 
@@ -8,7 +10,7 @@ only if a new data is available.
 
 """
 
-__version__ = "1.0.5"
+__version__ = "1.0.7"
 
 import argparse
 import logging
@@ -23,13 +25,18 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import requests
 
+from PIL import Image, ImageDraw, ImageFont
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
-ALERTS_URL = "https://services.swpc.noaa.gov/text/wwv.txt"
-FLUX_URL = "https://services.swpc.noaa.gov/products/summary/10cm-flux.json"
-FORECAST_URL = "https://services.swpc.noaa.gov/text/27-day-outlook.txt"
+NOAA_URL = 'https://services.swpc.noaa.gov'
+ALERTS_URL = NOAA_URL + "/text/wwv.txt"
+FLUX_URL = NOAA_URL + "/products/summary/10cm-flux.json"
+FORECAST_URL = NOAA_URL + "/text/27-day-outlook.txt"
+MUF_URL = NOAA_URL + '/products/animations/wam-ipe/ionosphere.json'
+
 CACHE_DIR = "/tmp/sunslack-data"
+FONT_PATH = "/System/Library/Fonts/Supplemental/Arial.ttf"
 
 logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
                     datefmt='%c', level=logging.INFO)
@@ -60,6 +67,10 @@ class Config:
     self._token = parser.get('SUNSLACK', 'token')
     self._channel = parser.get('SUNSLACK', 'channel')
     self._cachedir = parser.get('SUNSLACK', 'cachedir', fallback=CACHE_DIR)
+    self._font = parser.get('SUNSLACK', 'font', fallback=FONT_PATH)
+    if not os.path.exists(self._font):
+      logging.error('Font file "%s" not found. Check your config file', self._font)
+      sys.exit(os.EX_IOERR)
 
   def __repr__(self):
     return "<Config> channel: {0._channel}, cachedir: {0._cachedir}, token: ***".format(self)
@@ -76,6 +87,9 @@ class Config:
   def token(self):
     return self._token
 
+  @property
+  def font(self):
+    return self._font
 
 class NoaaData:
   """Data structure storing all the sun indices predictions"""
@@ -92,6 +106,31 @@ class NoaaData:
       return False
     return self.date == other.date
 
+
+class MUF:
+  """Store and manage a MUF record"""
+  __slots__ = ['time', 'filename', 'path', 'new_flag']
+
+  def __init__(self, new_flag, filename):
+    self.new_flag = new_flag
+    self.filename = os.path.basename(filename)
+    self.path = os.path.dirname(filename)
+    name = os.path.splitext(filename)[0]
+    self.time = datetime.strptime(name.split('_')[-1], '%Y%m%dT%H%M')
+
+  def __repr__(self):
+    return f"{self.time} {self.filename}"
+
+  @property
+  def fullname(self):
+    return os.path.join(self.path, self.filename)
+
+  @property
+  def strdate(self):
+    return self.time.strftime("%Y %b %d %H:%M UTC")
+
+  def is_new(self):
+    return self.new_flag
 
 class SunRecord:
   """Datastructure holding the sun forecast information"""
@@ -125,6 +164,7 @@ class SunRecord:
 
 
 class Flux:
+  """Flux information"""
 
   def __init__(self, cache_dir):
     os.makedirs(cache_dir, exist_ok=True)
@@ -220,6 +260,7 @@ class Forecast:
 
 
 class Alerts:
+  """NOAA space weather alerts"""
 
   def __init__(self, cache_dir):
     os.makedirs(cache_dir, exist_ok=True)
@@ -265,7 +306,68 @@ class Alerts:
 
   @property
   def text(self):
-    return '```' + '\n'.join(self.data.fields) + '```'
+    return '\n'.join(f for f in self.data.fields if not f.startswith('No space weather'))
+
+
+class MUFPredictions:
+  """Download the metadata and files necessary for generating the MUF animation map"""
+
+  def __init__(self, cache_dir):
+    os.makedirs(cache_dir, exist_ok=True)
+    self.cache_dir = cache_dir
+    self.muf_data = []
+    self.newdata = False
+    try:
+      req = requests.get(MUF_URL)
+      data = req.json()
+    except requests.ConnectionError as err:
+      logging.error("Connection error: %s let's try later", err)
+      sys.exit(os.EX_IOERR)
+
+    if req.status_code == 200:
+      for item in data:
+        filename = item['url']
+        self.muf_data.append(MUF(*download_image(filename, cache_dir)))
+
+    # check if we have any new data
+    for mufinfo in self.muf_data:
+      if mufinfo.is_new():
+        self.newdata = True
+
+  def __repr__(self):
+    return '<MUFPredictions> {:d} files, new data {}'.format(len(self.muf_data), self.newdata)
+
+  def gen_animation(self, filename, font):
+    """Geneate the MUF animation"""
+    font = ImageFont.truetype(font, 16)
+
+    image_list = []
+    for num, mufdata in enumerate(self.muf_data):
+      if num % 2 != 0:          # We only animage one every two images
+        continue
+      logging.debug('%d, %s', num, mufdata.filename)
+      image = Image.open(mufdata.fullname)
+      image = image.crop((800, 50, 1550, 430))
+      image = image.resize((640, 330))
+      draw = ImageDraw.Draw(image)
+      draw.text((25, 305), mufdata.strdate, (255, 255, 255), font=font)
+      image_list.append(image)
+      image_list[0].save(filename, save_all=True, optimize=True, duration=100, loop=0,
+                         append_images=image_list)
+    logging.info('Animation %s generated', filename)
+
+
+  def cleanup(self):
+    """Remove the older MUF files"""
+    newfiles = {f.filename for f in self.muf_data}
+    if not newfiles:            # Ignore cleanup when we have no new files.
+      return
+    currentfiles = {n for n in os.listdir(self.cache_dir) if n.startswith('WFS_IPE')}
+    for name in currentfiles ^ ( newfiles & currentfiles):
+      try:
+        os.unlink(os.path.join(self.cache_dir, name))
+      except IOError as err:
+        logging.warning(err)
 
 
 def readcache(cachefile):
@@ -282,6 +384,20 @@ def writecache(cachefile, data):
   """Write data into the cachefile"""
   with open(cachefile, 'wb') as fd_cache:
     pickle.dump(data, fd_cache)
+
+
+def download_image(file_name, dest):
+  url = NOAA_URL + file_name
+  local_name = os.path.join(dest, os.path.basename(file_name))
+  if os.path.exists(local_name):
+    return (False, local_name)
+  logging.info('Downloading: %s', local_name)
+  with requests.get(url, stream=True) as req:
+    req.raise_for_status()
+    with open(local_name, 'wb') as fout:
+      for chunk in req.iter_content(chunk_size=8192):
+        fout.write(chunk)
+  return (True, local_name)
 
 
 def plot(predictions, filename):
@@ -318,7 +434,9 @@ def plot(predictions, filename):
 
 
 def main():
+  # pylint: disable=too-many-statements
   """Everyone needs a main purpose"""
+
   parser = argparse.ArgumentParser(description="Send NOAA sun predictions to slack")
   parser.add_argument("--config", type=str, required=True,
                       help="configuration file path")
@@ -329,11 +447,12 @@ def main():
   alerts = Alerts(config.cachedir)
   forecast = Forecast(config.cachedir)
   flux = Flux(config.cachedir)
+  muf = MUFPredictions(config.cachedir)
   client = WebClient(token=config.token)
 
   if alerts.newdata:
     try:
-      client.chat_postMessage(channel=config.channel, text=alerts.text)
+      client.chat_postMessage(channel=config.channel, text="```" + alerts.text + "```")
       logging.info("Alerts messages on %s", alerts.time.strftime("%b %d %H:%M"))
     except SlackApiError as err:
       logging.error("postMessage error: %s", err.response['error'])
@@ -364,8 +483,24 @@ def main():
     except SlackApiError as err:
       logging.error("file_upload error: %s", err.response['error'])
   else:
-    logging.info('No new graph to post')
+    logging.info('No new forecast graph to post')
 
+  if muf.newdata:
+    anim_file = 'MUF_{}.png'.format(forecast.time.strftime('%Y%m%d%H%M'))
+    anim_file = os.path.join(config.cachedir, anim_file)
+    logging.info('A new animated map %s generated', anim_file)
+    muf.gen_animation(filename=anim_file, font=config.font)
+    try:
+      title = "MUF Predictions"
+      client.files_upload(file=anim_file, channels=config.channel, initial_comment=title)
+      logging.info("Sending muf animation file: %s", anim_file)
+    except SlackApiError as err:
+      logging.error("file_upload error: %s", err.response['error'])
+  else:
+    logging.info('No new MUF graph to post')
+
+  # cleanup the MUF cache
+  muf.cleanup()
 
 if __name__ == "__main__":
   main()
