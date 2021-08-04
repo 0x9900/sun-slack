@@ -10,7 +10,7 @@ only if a new data is available.
 
 """
 
-__version__ = "1.0.7"
+__version__ = "1.0.8"
 
 import argparse
 import logging
@@ -353,7 +353,7 @@ class MUFPredictions:
       draw.text((25, 305), mufdata.strdate, (255, 255, 255), font=font)
       image_list.append(image)
       image_list[0].save(filename, save_all=True, optimize=True, duration=100, loop=0,
-                         append_images=image_list)
+                         append_images=image_list[1:])
     logging.info('Animation %s generated', filename)
 
 
