@@ -491,7 +491,7 @@ def main():
     logging.info('A new animated map %s generated', anim_file)
     muf.gen_animation(filename=anim_file, font=config.font)
     try:
-      title = "MUF Predictions"
+      title = "MUF Predictions _click on the image to see the animation_"
       client.files_upload(file=anim_file, channels=config.channel, initial_comment=title)
       logging.info("Sending muf animation file: %s", anim_file)
     except SlackApiError as err:
