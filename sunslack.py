@@ -10,7 +10,7 @@ only if a new data is available.
 
 """
 
-__version__ = "1.0.8"
+__version__ = "1.0.9"
 
 import argparse
 import logging
@@ -352,8 +352,8 @@ class MUFPredictions:
       draw = ImageDraw.Draw(image)
       draw.text((25, 305), mufdata.strdate, (255, 255, 255), font=font)
       image_list.append(image)
-      image_list[0].save(filename, save_all=True, optimize=True, duration=100, loop=0,
-                         append_images=image_list[1:])
+    image_list[0].save(filename, save_all=True, optimize=True, duration=100, loop=0,
+                       append_images=image_list[1:])
     logging.info('Animation %s generated', filename)
 
 
@@ -443,7 +443,7 @@ def main():
   opts = parser.parse_args()
   config = Config(os.path.expanduser(opts.config))
 
-  logging.info("Gathering data")
+  logging.info("sunslack %s Gathering data", __version__)
   alerts = Alerts(config.cachedir)
   forecast = Forecast(config.cachedir)
   flux = Flux(config.cachedir)
