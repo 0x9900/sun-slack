@@ -10,7 +10,7 @@ only if a new data is available.
 
 """
 
-__version__ = "1.0.9"
+__version__ = "1.1.0"
 
 import argparse
 import logging
@@ -459,7 +459,7 @@ def main():
   else:
     logging.info('No new message to post')
 
-  if flux.newdata:
+  if flux.newdata and False:    # Tempoararily Disabled
     try:
       message = "Current 10.7cm flux index {:d} on {} UTC".format(
         flux.flux, flux.time.strftime("%b %d %H:%M")
