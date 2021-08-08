@@ -10,7 +10,7 @@ only if a new data is available.
 
 """
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 import argparse
 import logging
@@ -31,8 +31,7 @@ from slack_sdk.errors import SlackApiError
 
 NOAA_URL = 'https://services.swpc.noaa.gov'
 ALERTS_URL = NOAA_URL + "/text/wwv.txt"
-FLUX_URL = NOAA_URL + "/products/summary/10cm-flux.json"
-FORECAST_URL = NOAA_URL + "/text/27-day-outlook.txt"
+FLUX_URL = NOAA_URL + "/text/27-day-outlook.txt"
 MUF_URL = NOAA_URL + '/products/animations/wam-ipe/ionosphere.json'
 
 CACHE_DIR = "/tmp/sunslack-data"
@@ -132,8 +131,9 @@ class MUF:
   def is_new(self):
     return self.new_flag
 
+
 class SunRecord:
-  """Datastructure holding the sun forecast information"""
+  """Datastructure holding the sun Flux information"""
   __slots__ = ("date", "data")
 
   def __init__(self, args):
@@ -164,12 +164,12 @@ class SunRecord:
 
 
 class Flux:
-  """Flux information"""
+  """The 27-day Space Weather Outlook Table is issued Mondays by 1500 UTC"""
 
   def __init__(self, cache_dir):
     os.makedirs(cache_dir, exist_ok=True)
     cachefile = os.path.join(cache_dir, 'flux.pkl')
-    self.data = {}
+    self.data = None
 
     cached_data = readcache(cachefile)
     self.data = self.download_flux()
@@ -180,57 +180,12 @@ class Flux:
       self.newdata = True
       writecache(cachefile, self.data)
 
+
   @staticmethod
   def download_flux():
-    """Download the current measuref 10.7 cm flux index"""
+    """Download the flux data from noaa"""
     try:
       req = requests.get(FLUX_URL)
-      data = req.json()
-    except requests.ConnectionError as err:
-      logging.error('Connection error: %s we will try later', err)
-      sys.exit(os.EX_IOERR)
-
-    if req.status_code != 200:
-      return None
-
-    return dict(flux=int(data['Flux']),
-                time=datetime.strptime(data['TimeStamp'], '%Y-%m-%d %H:%M:%S'))
-
-  def __repr__(self):
-    return "<{}> at: {}".format(self.__class__.__name__, self.time.isoformat())
-
-  @property
-  def flux(self):
-    return self.data['flux']
-
-  @property
-  def time(self):
-    return self.data['time']
-
-
-class Forecast:
-  """The 27-day Space Weather Outlook Table is issued Mondays by 1500 UTC"""
-
-  def __init__(self, cache_dir):
-    os.makedirs(cache_dir, exist_ok=True)
-    cachefile = os.path.join(cache_dir, 'forecast.pkl')
-    self.data = None
-
-    cached_data = readcache(cachefile)
-    self.data = self.download_forecast()
-
-    if self.data == cached_data:
-      self.newdata = False
-    else:
-      self.newdata = True
-      writecache(cachefile, self.data)
-
-
-  @staticmethod
-  def download_forecast():
-    """Download the forecast data from noaa"""
-    try:
-      req = requests.get(FORECAST_URL)
     except requests.ConnectionError as err:
       logging.error('Connection error: %s we will try later', err)
       sys.exit(os.EX_IOERR)
@@ -401,7 +356,7 @@ def download_image(file_name, dest):
 
 
 def plot(predictions, filename):
-  """Plot forecast"""
+  """Plot flux"""
   fields = predictions.fields
   dates = [s.date for s in fields]
   a_index = [s.a_index for s in fields]
@@ -433,6 +388,70 @@ def plot(predictions, filename):
   plt.savefig(filename, transparent=False, dpi=100)
 
 
+def yesno(parg):
+  yes_strings = ["y", "yes", "true", "1", "on"]
+  no_strings = ["n", "no", "false", "0", "off"]
+  if parg.lower() in yes_strings:
+    return True
+  if parg.lower() in no_strings:
+    return False
+  raise argparse.ArgumentError
+
+
+def get_alerts(config, client):
+  alerts = Alerts(config.cachedir)
+  if not alerts.newdata:
+    logging.info('No new Alert message to post')
+    return
+
+  try:
+    client.chat_postMessage(channel=config.channel, text="```" + alerts.text + "```")
+    logging.info("Alerts messages on %s", alerts.time.strftime("%b %d %H:%M"))
+  except SlackApiError as err:
+    logging.error("postMessage error: %s", err.response['error'])
+
+
+def get_flux(config, client):
+  flux = Flux(config.cachedir)
+  if not flux.newdata:
+    logging.info('No new flux graph to post')
+    return
+
+  time_tag = datetime.now().strftime('%Y%m%d%H%M')
+  plot_file = 'flux_{}.png'.format(time_tag)
+  plot_path = os.path.join(config.cachedir, plot_file)
+  plot(flux, plot_path)
+  logging.info('A new plot file %s generated', plot_file)
+  try:
+    title = 'Previsions for: {}'.format(flux.time.strftime("%b %d %H:%M"))
+    client.files_upload(file=plot_path, channels=config.channel, initial_comment=title)
+    logging.info("Sending plot file: %s", plot_path)
+  except SlackApiError as err:
+    logging.error("file_upload error: %s", err.response['error'])
+
+
+def get_muf(config, client):
+  muf = MUFPredictions(config.cachedir)
+  if not muf.newdata:
+    logging.info('No new MUF graph to post')
+    return
+
+  time_tag = datetime.now().strftime('%Y%m%d%H%M')
+  anim_file = 'MUF_{}.png'.format(time_tag)
+  anim_file = os.path.join(config.cachedir, anim_file)
+  logging.info('A new animated map %s generated', anim_file)
+  muf.gen_animation(filename=anim_file, font=config.font)
+  try:
+    title = "MUF Predictions _click on the image to see the animation_"
+    client.files_upload(file=anim_file, channels=config.channel, initial_comment=title)
+    logging.info("Sending muf animation file: %s", anim_file)
+  except SlackApiError as err:
+    logging.error("file_upload error: %s", err.response['error'])
+
+  # cleanup the MUF cache
+  muf.cleanup()
+
+
 def main():
   # pylint: disable=too-many-statements
   """Everyone needs a main purpose"""
@@ -440,67 +459,24 @@ def main():
   parser = argparse.ArgumentParser(description="Send NOAA sun predictions to slack")
   parser.add_argument("--config", type=str, required=True,
                       help="configuration file path")
+  parser.add_argument("-a", "--alerts", action='store_true',
+                      help="Alerts messages from NOAA (yes/no) [default: %(default)s]")
+  parser.add_argument("-f", "--flux", action='store_true',
+                      help=("Flux, Aindex, Kpindex weekly previsions (yes/no)"
+                            " [default: %(default)s]"))
+  parser.add_argument("-m", "--muf", action='store_true',
+                      help="MUF previsions map (yes/no) [default: %(default)s]")
   opts = parser.parse_args()
   config = Config(os.path.expanduser(opts.config))
-
-  logging.info("sunslack %s Gathering data", __version__)
-  alerts = Alerts(config.cachedir)
-  forecast = Forecast(config.cachedir)
-  flux = Flux(config.cachedir)
-  muf = MUFPredictions(config.cachedir)
   client = WebClient(token=config.token)
 
-  if alerts.newdata:
-    try:
-      client.chat_postMessage(channel=config.channel, text="```" + alerts.text + "```")
-      logging.info("Alerts messages on %s", alerts.time.strftime("%b %d %H:%M"))
-    except SlackApiError as err:
-      logging.error("postMessage error: %s", err.response['error'])
-  else:
-    logging.info('No new message to post')
+  if opts.alerts:
+    get_alerts(config, client)
+  if opts.flux:
+    get_flux(config, client)
+  if opts.muf:
+    get_muf(config, client)
 
-  if flux.newdata and False:    # Tempoararily Disabled
-    try:
-      message = "Current 10.7cm flux index {:d} on {} UTC".format(
-        flux.flux, flux.time.strftime("%b %d %H:%M")
-      )
-      client.chat_postMessage(channel=config.channel, text=message)
-      logging.info("10cm flux %d on %s", flux.flux, flux.time.strftime("%b %d %H:%M"))
-    except SlackApiError as err:
-      logging.error("postMessage error: %s", err.response['error'])
-  else:
-    logging.info('No new message to post')
-
-  if forecast.newdata:
-    plot_file = 'forecast_{}.png'.format(forecast.time.strftime('%Y%m%d%H%M'))
-    plot_path = os.path.join(config.cachedir, plot_file)
-    plot(forecast, plot_path)
-    logging.info('A new plot file %s generated', plot_file)
-    try:
-      title = 'Previsions for: {}'.format(forecast.time.strftime("%b %d %H:%M"))
-      client.files_upload(file=plot_path, channels=config.channel, initial_comment=title)
-      logging.info("Sending plot file: %s", plot_path)
-    except SlackApiError as err:
-      logging.error("file_upload error: %s", err.response['error'])
-  else:
-    logging.info('No new forecast graph to post')
-
-  if muf.newdata:
-    anim_file = 'MUF_{}.png'.format(forecast.time.strftime('%Y%m%d%H%M'))
-    anim_file = os.path.join(config.cachedir, anim_file)
-    logging.info('A new animated map %s generated', anim_file)
-    muf.gen_animation(filename=anim_file, font=config.font)
-    try:
-      title = "MUF Predictions _click on the image to see the animation_"
-      client.files_upload(file=anim_file, channels=config.channel, initial_comment=title)
-      logging.info("Sending muf animation file: %s", anim_file)
-    except SlackApiError as err:
-      logging.error("file_upload error: %s", err.response['error'])
-  else:
-    logging.info('No new MUF graph to post')
-
-  # cleanup the MUF cache
-  muf.cleanup()
 
 if __name__ == "__main__":
   main()

@@ -20,7 +20,7 @@ upload the prediction graph when NOAA publishes new data.
 
 Line to add in your crontab:
 ```
-1  *  *  *  *  /usr/local/bin/sunslack --config ~/.sunslack.conf >/dev/null
+1  *  *  *  *  /usr/local/bin/sunslack --config ~/.sunslack.conf -a -f -m >/dev/null
 ```
 
 ## Example of graphs published
