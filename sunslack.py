@@ -320,7 +320,9 @@ class MUFPredictions:
     currentfiles = {n for n in os.listdir(self.cache_dir) if n.startswith('WFS_IPE')}
     for name in currentfiles ^ ( newfiles & currentfiles):
       try:
-        os.unlink(os.path.join(self.cache_dir, name))
+        filename = os.path.join(self.cache_dir, name)
+        os.unlink(filename)
+        logging.info('Removing: %s', filename)
       except IOError as err:
         logging.warning(err)
 
@@ -469,6 +471,10 @@ def main():
   opts = parser.parse_args()
   config = Config(os.path.expanduser(opts.config))
   client = WebClient(token=config.token)
+
+  if not any([opts.alerts, opts.flux, opts.muf]):
+    logging.warning('Nothing to do, please select [--alerts, --flux, --muf]. Multiple selections are ok')
+    return
 
   if opts.alerts:
     get_alerts(config, client)
