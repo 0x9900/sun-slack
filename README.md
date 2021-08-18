@@ -10,17 +10,26 @@ Create a configuration file with the following template:
 token: xoxb-123456790-123456790-123456790
 channel: sunflux
 cachedir: /var/tmp/sunflux
+font: /System/Library/Fonts/Supplemental/Arial.ttf
+logfile: /tmp/sunflux.log
+loglevel: INFO
 ```
 
 You can get a token for your bot by registering it on the [Slack
 App][1] website.
+
+The field `font` is the path the the font that will be used in the MUF
+animated image.
+
+If you are running the program `sunflux` in cron, it is a good idea to
+specifying in a logfile name.
 
 You can run the bot every hour in cron. It only sends messages and
 upload the prediction graph when NOAA publishes new data.
 
 Line to add in your crontab:
 ```
-1  *  *  *  *  /usr/local/bin/sunslack --config ~/.sunslack.conf -a -f -m >/dev/null
+1  *  *  *  *  /usr/local/bin/sunslack --config ~/.sunslack.conf -a -f -m
 ```
 
 ## Example of graphs published

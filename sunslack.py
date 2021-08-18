@@ -10,7 +10,7 @@ only if a new data is available.
 
 """
 
-__version__ = "1.1.1"
+__version__ = "1.1.2"
 
 import argparse
 import logging
@@ -18,7 +18,7 @@ import os
 import pickle
 import sys
 
-from configparser import ConfigParser
+from configparser import ConfigParser, NoOptionError
 from datetime import datetime
 
 import matplotlib.dates as mdates
@@ -63,10 +63,22 @@ class Config:
     with open(config_file, 'r') as fdc:
       parser.read_file(fdc)
 
-    self._token = parser.get('SUNSLACK', 'token')
-    self._channel = parser.get('SUNSLACK', 'channel')
-    self._cachedir = parser.get('SUNSLACK', 'cachedir', fallback=CACHE_DIR)
-    self._font = parser.get('SUNSLACK', 'font', fallback=FONT_PATH)
+    try:
+      self._token = parser.get('SUNSLACK', 'token')
+      self._channel = parser.get('SUNSLACK', 'channel')
+      self._logfile = parser.get('SUNSLACK', 'logfile', fallback=None)
+      self._cachedir = parser.get('SUNSLACK', 'cachedir', fallback=CACHE_DIR)
+      self._font = parser.get('SUNSLACK', 'font', fallback=FONT_PATH)
+    except NoOptionError as err:
+      logging.error(err)
+      sys.exit(os.EX_CONFIG)
+
+    loglevel = parser.get('SUNSLACK', 'loglevel', fallback='INFO')
+    try:
+      self._loglevel = logging._checkLevel(loglevel.upper())
+    except ValueError:
+      self._loglevel = logging._checkLevel('INFO')
+
     if not os.path.exists(self._font):
       logging.error('Font file "%s" not found. Check your config file', self._font)
       sys.exit(os.EX_IOERR)
@@ -89,6 +101,14 @@ class Config:
   @property
   def font(self):
     return self._font
+
+  @property
+  def logfile(self):
+    return self._logfile
+
+  @property
+  def loglevel(self):
+    return self._loglevel
 
 class NoaaData:
   """Data structure storing all the sun indices predictions"""
@@ -470,10 +490,21 @@ def main():
                       help="MUF previsions map (yes/no) [default: %(default)s]")
   opts = parser.parse_args()
   config = Config(os.path.expanduser(opts.config))
+
+  logger = logging.getLogger()
+  if config.loglevel != logger.level:
+    logger.setLevel(config.loglevel)
+
+  if config.logfile:
+    fmt = logging.Formatter('%(asctime)s %(levelname)s: [%(funcName)s] %(message)s')
+    handler = logging.FileHandler(config.logfile, encoding='utf-8')
+    handler.setFormatter(fmt)
+    logger.handlers = [handler]
+
   client = WebClient(token=config.token)
 
   if not any([opts.alerts, opts.flux, opts.muf]):
-    logging.warning('Nothing to do, please select [--alerts, --flux, --muf]. Multiple selections are ok')
+    logging.warning('Please select [--alerts, --flux, --muf]. Multiple selections are ok')
     return
 
   if opts.alerts:
