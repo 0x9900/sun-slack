@@ -303,6 +303,7 @@ class MUFPredictions:
       for item in data:
         filename = item['url']
         self.muf_data.append(MUF(*download_image(filename, cache_dir)))
+    logging.info('%d images to be processed', len(self.muf_data))
 
     # check if we have any new data
     for mufinfo in self.muf_data:
@@ -342,7 +343,7 @@ class MUFPredictions:
       try:
         filename = os.path.join(self.cache_dir, name)
         os.unlink(filename)
-        logging.info('Removing: %s', filename)
+        logging.debug('Removing: %s', filename)
       except IOError as err:
         logging.warning(err)
 
@@ -368,7 +369,7 @@ def download_image(file_name, dest):
   local_name = os.path.join(dest, os.path.basename(file_name))
   if os.path.exists(local_name):
     return (False, local_name)
-  logging.info('Downloading: %s', local_name)
+  logging.debug('Downloading: %s', local_name)
   with requests.get(url, stream=True) as req:
     req.raise_for_status()
     with open(local_name, 'wb') as fout:

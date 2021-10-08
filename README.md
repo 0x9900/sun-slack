@@ -38,4 +38,8 @@ Line to add in your crontab:
 
 ![MUF plot](misc/MUF.gif)
 
+## Slack Screen Shot
+
+![Slack Screen Shot](misc/Slack-Screenshot.png)
+
 [1]: https://api.slack.com/apps
