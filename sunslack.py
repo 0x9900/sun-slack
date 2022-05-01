@@ -428,7 +428,10 @@ def get_alerts(config, client):
     return
 
   try:
-    client.chat_postMessage(channel=config.channel, text="```" + alerts.text + "```")
+    message = []
+    message.append("```" + alerts.text + "```")
+    message.append("For more information on the sun activity: https://www.swpc.noaa.gov/communities/space-weather-enthusiasts")
+    client.chat_postMessage(channel=config.channel, text='\n'.join(message))
     logging.info("Alerts messages on %s", alerts.time.strftime("%b %d %H:%M"))
   except SlackApiError as err:
     logging.error("postMessage error: %s", err.response['error'])
