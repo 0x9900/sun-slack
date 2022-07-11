@@ -463,7 +463,7 @@ def get_muf(config, client):
   try:
     title = "MUF Predictions _click on the image to see the animation_"
     client.files_upload(file=muf_video, channels=config.channel, initial_comment=title)
-    logging.info("Sending muf animation file: %s", anim_file)
+    logging.info("Sending muf animation file: %s", muf_video)
   except SlackApiError as err:
     logging.error("file_upload error: %s", err.response['error'])
 
