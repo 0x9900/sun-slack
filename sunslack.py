@@ -457,25 +457,12 @@ def get_flux(config, client):
 
 
 def get_muf(config, client):
-  muf = MUFPredictions(config.cachedir)
-  if not muf.newdata:
-    logging.info('No new MUF graph to post')
-    return
-
-  time_tag = datetime.now().strftime('%Y%m%d%H%M')
-  anim_file = 'MUF_{}.png'.format(time_tag)
-  anim_file = os.path.join(config.cachedir, anim_file)
-  logging.info('A new animated map %s generated', anim_file)
-  muf.gen_animation(filename=anim_file, font=config.font)
   try:
     title = "MUF Predictions _click on the image to see the animation_"
-    client.files_upload(file=anim_file, channels=config.channel, initial_comment=title)
+    client.files_upload(file='/var/www/html/muf.mp4', channels=config.channel, initial_comment=title)
     logging.info("Sending muf animation file: %s", anim_file)
   except SlackApiError as err:
     logging.error("file_upload error: %s", err.response['error'])
-
-  # cleanup the MUF cache
-  muf.cleanup()
 
 
 def main():
