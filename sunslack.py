@@ -457,9 +457,12 @@ def get_flux(config, client):
 
 
 def get_muf(config, client):
+  muf_video = '/var/www/html/muf.mp4'
+  if not os.path.exists(muf_video):
+    return
   try:
     title = "MUF Predictions _click on the image to see the animation_"
-    client.files_upload(file='/var/www/html/muf.mp4', channels=config.channel, initial_comment=title)
+    client.files_upload(file=muf_video, channels=config.channel, initial_comment=title)
     logging.info("Sending muf animation file: %s", anim_file)
   except SlackApiError as err:
     logging.error("file_upload error: %s", err.response['error'])
