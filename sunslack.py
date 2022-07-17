@@ -10,7 +10,7 @@ only if a new data is available.
 
 """
 
-__version__ = "1.1.3"
+__version__ = "1.1.4"
 
 import argparse
 import logging
