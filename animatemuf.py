@@ -19,7 +19,7 @@ try:
 except ImportError:
   tqdm = iter
 
-TARGET_DIR = '/Volumes/WDPassport/tmp/muf'
+TARGET_DIR = '/tmp/muf'
 NOAA = "https://services.swpc.noaa.gov/experimental"
 SOURCE_JSON = NOAA + "/products/animations/ctipe_muf.json"
 
