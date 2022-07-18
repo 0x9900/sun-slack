@@ -61,11 +61,14 @@ setup(
   license=__license__,
   author=__author__,
   author_email='w6bsd@bsdworld.org',
-  py_modules=['sunslack'],
+  py_modules=['sunslack', 'animatemuf'],
   python_requires=">=3.6.0",
   install_requires=['matplotlib', 'slack_sdk'],
   entry_points = {
-    'console_scripts': ['sunslack = sunslack:main'],
+    'console_scripts': [
+      'sunslack = sunslack:main',
+      'animatemuf = animatemuf:main'
+    ],
   },
   classifiers=[
     'Development Status :: 3 - Alpha',
