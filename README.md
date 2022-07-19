@@ -39,8 +39,6 @@ Line to add in your crontab:
 
 ![Flux plot](misc/flux.png)
 
-![MUF plot](misc/muf.mp4)
-
 ## Slack Screen Shot
 
 ![Slack Screen Shot](misc/Slack-Screenshot.png)
