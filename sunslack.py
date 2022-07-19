@@ -34,7 +34,6 @@ ALERTS_URL = NOAA_URL + "/text/wwv.txt"
 FLUX_URL = NOAA_URL + "/text/27-day-outlook.txt"
 
 CACHE_DIR = "/tmp/sunslack-data"
-FONT_PATH = "/System/Library/Fonts/Supplemental/Arial.ttf"
 
 logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
                     datefmt='%c', level=logging.INFO)
