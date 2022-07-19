@@ -14,16 +14,11 @@ from datetime import datetime, timedelta
 
 from PIL import Image
 
-try:
-  from tqdm import tqdm
-except ImportError:
-  tqdm = iter
-
 TARGET_DIR = '/tmp/muf'
 NOAA = "https://services.swpc.noaa.gov/experimental"
 SOURCE_JSON = NOAA + "/products/animations/ctipe_muf.json"
 
-CONVERTER = '/Users/fred/tmp/convert.sh'
+CONVERTER = '/usr/local/bin/convert.sh'
 
 MUF_FILE = '/tmp/muf_source.json'
 
@@ -78,7 +73,7 @@ def animate():
     if start < file_time < end:
       file_list.append(name)
 
-  for name in tqdm(file_list, unit=' Files read'):
+  for name in file_list:
     fullname = os.path.join(TARGET_DIR, name)
     logging.debug('Add %s', name)
     image = Image.open(fullname)
