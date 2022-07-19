@@ -19,6 +19,12 @@ Create a configuration file with the following template:
 token: xoxb-123456790-123456790-123456790
 channel: sunflux
 cachedir: /var/tmp/sunflux
+loglevel: INFO
+[ANIMATEMUF]
+target_dir = /var/tmp/muf
+converter = /usr/local/bin/convert.sh
+muf_file = /tmp/muf_source.json
+video_file = /tmp/muf/muf.mp4
 ```
 
 You can get a token for your bot by registering it on the [Slack
@@ -29,12 +35,10 @@ upload the prediction graph when NOAA publishes new data.
 
 Line to add in your crontab:
 ```
-1  *  *  *  *  /usr/local/bin/sunslack --config ~/.sunslack.conf >/dev/null
+1 * * * * /usr/local/bin/sunslack --config ~/.sslack.cnf --alerts --flux --muf
 ```
 
-
 [1]: https://api.slack.com/apps
-
 """
 
 __author__ = "Fred C. (W6BSD)"
