@@ -12,10 +12,12 @@ channel: sunflux
 cachedir: /var/tmp/sunflux
 loglevel: INFO
 [ANIMATEMUF]
-target_dir = /var/tmp/muf
-converter = /usr/local/bin/convert.sh
-muf_file = /tmp/muf_source.json
-video_file = /tmp/muf/muf.mp4
+target_dir: /var/tmp/muf
+converter: /usr/local/bin/convert.sh
+muf_file: /tmp/muf_source.json
+video_file: /tmp/muf/muf.mp4
+font: /System/Library/Fonts/Supplemental/Arial Narrow.ttf
+font_size: 16
 ```
 
 You can get a token for your bot by registering it on the [Slack
