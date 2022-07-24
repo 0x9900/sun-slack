@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import gc
 import json
 import logging
 import os
@@ -67,9 +68,8 @@ def animate(config):
 
   logging.info('Processing: %d images', len(file_list))
   for name in file_list:
-    fullname = os.path.join(config.target_dir, name)
     logging.debug('Add %s', name)
-    image = Image.open(fullname)
+    image = Image.open(os.path.join(config.target_dir, name))
     image = image.convert('RGB')
     image = image.resize((800, 600), Image.Resampling.LANCZOS)
     draw = ImageDraw.Draw(image)
@@ -78,10 +78,14 @@ def animate(config):
 
   if len(image_list) > 2:
     logging.info('Saving animation into %s', animation)
-    image_list[0].save(animation, save_all=True, optimize=True, duration=75,
-                       loop=0, append_images=image_list[1:])
+    image_list[0].save(animation, save_all=True, duration=75, loop=0,
+                       append_images=image_list[1:])
   else:
     logging.info('Nothing to animate')
+
+  del image_list
+  gc.collect()
+
 
 def gen_video(config):
   logfile = os.path.join(config.target_dir, 'muf.log')
@@ -99,6 +103,7 @@ def gen_video(config):
   proc.wait()
   if proc.returncode != 0:
     logging.error('Error generating the video file. Status code: %d', proc.returncode)
+
 
 def main(args=sys.argv[:1]):
   parser = argparse.ArgumentParser(description='MUF animation')
@@ -123,4 +128,6 @@ def main(args=sys.argv[:1]):
 
 
 if __name__ == "__main__":
+  logging.basicConfig(level=logging.INFO)
+  log = logging.getLogger(__name__)
   main()
